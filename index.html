@@ -185,7 +185,7 @@
 
   <script>
     const DEFAULT_PROVIDER = 'elevenlabs';
-    const DEFAULT_API_KEY = 'sk_c4e9c2b99d68475201367f808e909363d7341c2cb94cae66';
+    const DEFAULT_API_KEY = 'sk_b96287717ad2180a62159af69425260e392cc42f97f79b00';
     const DEFAULT_VOICE_NAME = 'Brian';
     const DEFAULT_MODEL = 'eleven_multilingual_v2';
 
@@ -280,7 +280,7 @@
       rateEl.value = localStorage.getItem('reader_rate') || '1';
       pitchEl.value = localStorage.getItem('reader_pitch') || '1';
       volumeEl.value = localStorage.getItem('reader_volume') || '1';
-      elevenApiKeyEl.value = localStorage.getItem('reader_eleven_api_key') || DEFAULT_API_KEY;
+      elevenApiKeyEl.value = DEFAULT_API_KEY;
       elevenVoiceIdEl.value = localStorage.getItem('reader_eleven_voice_id') || '';
       elevenModelEl.value = localStorage.getItem('reader_eleven_model') || DEFAULT_MODEL;
       stabilityEl.value = localStorage.getItem('reader_eleven_stability') || '0.45';
