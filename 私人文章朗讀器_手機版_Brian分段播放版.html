@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>私人文章朗讀器 手機版 分段播放</title>
+  <style>
+    :root{
+      --bg:#f5f7fb; --card:#ffffff; --text:#1f2937; --muted:#6b7280; --line:#d7dce5;
+      --primary:#2563eb; --secondary:#64748b; --soft:#e8edf6; --ok:#0f766e; --warn:#b45309;
+    }
+    *{box-sizing:border-box;}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:Arial,"Microsoft JhengHei",sans-serif;}
+    body{padding:14px 14px calc(110px + env(safe-area-inset-bottom));}
+    .wrap{max-width:760px;margin:0 auto;}
+    .card{background:var(--card);border-radius:18px;padding:16px;box-shadow:0 10px 24px rgba(15,23,42,.08);margin-bottom:14px;}
+    h1{font-size:24px;margin:0 0 8px;}
+    h2{font-size:17px;margin:0 0 12px;}
+    .sub,.small{line-height:1.7;color:var(--muted);}
+    .sub{font-size:14px;}
+    .small{font-size:12px;}
+    label{display:block;font-size:14px;font-weight:700;margin-bottom:6px;}
+    input,select,textarea{
+      width:100%;border:1px solid var(--line);border-radius:14px;background:#fff;color:#111827;
+      padding:12px 13px;font-size:16px;
+    }
+    textarea{min-height:320px;resize:vertical;line-height:1.8;}
+    .stack > div + div{margin-top:12px;}
+    .buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    button{border:none;border-radius:14px;padding:13px 12px;font-size:15px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color: transparent;}
+    .primary{background:var(--primary);color:#fff;}
+    .secondary{background:var(--secondary);color:#fff;}
+    .light{background:var(--soft);color:#111827;}
+    .sticky-bar{
+      position:fixed;left:0;right:0;bottom:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+      background:rgba(245,247,251,.96);backdrop-filter: blur(10px);border-top:1px solid #d9e0ec;z-index:1000;
+    }
+    .sticky-inner{max-width:760px;margin:0 auto;display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:8px;}
+    .status{font-size:14px;line-height:1.9;}
+    .hidden{display:none;}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:12px;margin:4px 6px 0 0;}
+    .ok{color:var(--ok);} .warn{color:var(--warn);}
+    audio{width:100%;margin-top:10px;}
+    details summary{cursor:pointer;font-weight:700;}
+    .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+    progress{width:100%;height:12px;}
+    @media (max-width:480px){
+      h1{font-size:22px;} textarea{min-height:260px;} .row3{grid-template-columns:1fr;}
+      .sticky-inner{grid-template-columns:1.35fr 1fr 1fr 1fr;} button{font-size:14px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>私人文章朗讀器 手機版 分段播放</h1>
+      <div class="sub">這版會把長文章自動切段，逐段生成音檔並自動接續播放。適合手機聽較長內容。</div>
+    </div>
+
+    <div class="card stack">
+      <div>
+        <label for="title">文章標題</label>
+        <input id="title" type="text" placeholder="例如：今天要聽的文章">
+      </div>
+      <div>
+        <label for="text">文章內容</label>
+        <textarea id="text" placeholder="把文章貼在這裡..."></textarea>
+      </div>
+      <audio id="audioPlayer" controls class="hidden"></audio>
+      <div class="small hidden" id="audioHint">分段音檔生成後會在這裡播放，會自動接續下一段。</div>
+    </div>
+
+    <div class="card">
+      <h2>快速操作</h2>
+      <div class="buttons">
+        <button class="primary" onclick="playCurrent()">開始播放</button>
+        <button class="secondary" onclick="pauseCurrent()">暫停</button>
+        <button class="secondary" onclick="resumeCurrent()">繼續</button>
+        <button class="light" onclick="stopAllAudio()">停止</button>
+        <button class="light" onclick="saveLocal(true)">立即儲存</button>
+        <button class="light" onclick="loadLocal()">載入上次內容</button>
+        <button class="light" onclick="clearText()">清空內容</button>
+        <button class="light" onclick="fetchElevenVoices(true)">重新抓音色</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>播放進度</h2>
+      <div class="status" id="status">狀態：未播放<br>字數：0<br>標題：未命名</div>
+      <div style="margin-top:10px;">
+        <progress id="chunkProgress" value="0" max="1"></progress>
+      </div>
+      <div class="small" id="chunkInfo" style="margin-top:8px;">尚未開始分段播放</div>
+      <div class="small ok" id="persistNote" style="margin-top:8px;">自動保存：啟用中</div>
+    </div>
+
+    <div class="card">
+      <details open>
+        <summary>分段設定</summary>
+        <div class="stack" style="margin-top:12px;">
+          <div class="row2">
+            <div>
+              <label for="chunkSize">每段字數上限</label>
+              <input id="chunkSize" type="number" min="200" max="3000" step="100" value="900">
+            </div>
+            <div>
+              <label for="autoContinue">自動接續下一段</label>
+              <select id="autoContinue">
+                <option value="yes">是</option>
+                <option value="no">否</option>
+              </select>
+            </div>
+          </div>
+          <div class="small">建議 700～1200。文章很長時，分段會更穩。</div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>播放設定</summary>
+        <div class="stack" style="margin-top:12px;">
+          <div>
+            <label for="provider">語音提供者</label>
+            <select id="provider" onchange="toggleProviderUI()">
+              <option value="browser">瀏覽器內建語音</option>
+              <option value="elevenlabs">ElevenLabs 自然語音</option>
+            </select>
+          </div>
+
+          <div id="browserBox" class="stack">
+            <div>
+              <label for="lang">語言</label>
+              <select id="lang">
+                <option value="auto">自動偵測</option>
+                <option value="zh-TW">中文</option>
+                <option value="en-US">英文</option>
+                <option value="ja-JP">日文</option>
+              </select>
+            </div>
+            <div>
+              <label for="voice">瀏覽器語音</label>
+              <select id="voice"></select>
+            </div>
+            <div class="row3">
+              <div><label for="rate">語速</label><input id="rate" type="number" min="0.5" max="2" step="0.1" value="1"></div>
+              <div><label for="pitch">音高</label><input id="pitch" type="number" min="0.5" max="2" step="0.1" value="1"></div>
+              <div><label for="volume">音量</label><input id="volume" type="number" min="0" max="1" step="0.1" value="1"></div>
+            </div>
+          </div>
+
+          <div id="elevenBox" class="stack hidden">
+            <div><label for="elevenApiKey">API Key</label><input id="elevenApiKey" type="password"></div>
+            <div>
+              <label for="elevenVoiceSelect">選擇音色</label>
+              <select id="elevenVoiceSelect" onchange="syncVoiceIdFromSelect(); autoSaveSoon();">
+                <option value="">請先載入音色清單</option>
+              </select>
+            </div>
+            <div class="small" id="voiceMeta">尚未載入音色資料</div>
+            <div class="row2">
+              <div><label for="elevenVoiceId">Voice ID</label><input id="elevenVoiceId" type="text" placeholder="會自動帶入"></div>
+              <div><label for="elevenModel">Model</label><input id="elevenModel" type="text" value="eleven_multilingual_v2"></div>
+            </div>
+            <div class="row3">
+              <div><label for="stability">Stability</label><input id="stability" type="number" min="0" max="1" step="0.05" value="0.45"></div>
+              <div><label for="similarity">Similarity</label><input id="similarity" type="number" min="0" max="1" step="0.05" value="0.8"></div>
+              <div><label for="style">Style</label><input id="style" type="number" min="0" max="1" step="0.05" value="0.2"></div>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div class="sticky-bar">
+    <div class="sticky-inner">
+      <button class="primary" onclick="playCurrent()">播放</button>
+      <button class="secondary" onclick="pauseCurrent()">暫停</button>
+      <button class="secondary" onclick="resumeCurrent()">繼續</button>
+      <button class="light" onclick="stopAllAudio()">停止</button>
+    </div>
+  </div>
+
+  <script>
+    const DEFAULT_PROVIDER = 'elevenlabs';
+    const DEFAULT_API_KEY = 'sk_c4e9c2b99d68475201367f808e909363d7341c2cb94cae66';
+    const DEFAULT_VOICE_NAME = 'Brian';
+    const DEFAULT_MODEL = 'eleven_multilingual_v2';
+
+    const $ = (id) => document.getElementById(id);
+    const textEl = $('text'), titleEl = $('title'), statusEl = $('status'), providerEl = $('provider');
+    const browserBox = $('browserBox'), elevenBox = $('elevenBox'), audioPlayer = $('audioPlayer'), audioHint = $('audioHint');
+    const persistNoteEl = $('persistNote'), chunkProgressEl = $('chunkProgress'), chunkInfoEl = $('chunkInfo');
+
+    const langEl = $('lang'), voiceEl = $('voice'), rateEl = $('rate'), pitchEl = $('pitch'), volumeEl = $('volume');
+    const elevenApiKeyEl = $('elevenApiKey'), elevenVoiceSelectEl = $('elevenVoiceSelect'), elevenVoiceIdEl = $('elevenVoiceId');
+    const elevenModelEl = $('elevenModel'), stabilityEl = $('stability'), similarityEl = $('similarity'), styleEl = $('style');
+    const voiceMetaEl = $('voiceMeta'), chunkSizeEl = $('chunkSize'), autoContinueEl = $('autoContinue');
+
+    let voices = [], elevenVoices = [];
+    let lastObjectUrl = null, saveTimer = null;
+    let playbackState = { chunks: [], index: 0, stopped: false, paused: false };
+
+    function updateStatus(state) {
+      const title = titleEl.value.trim() || '未命名';
+      const text = textEl.value.trim();
+      statusEl.innerHTML = `狀態：${state}<br>字數：${text.length}<br>標題：${title}`;
+    }
+
+    function setPersistNote(text, cls='') {
+      persistNoteEl.className = 'small ' + cls;
+      persistNoteEl.textContent = text;
+    }
+
+    function autoSaveSoon() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => saveLocal(false), 350);
+    }
+
+    function toggleProviderUI() {
+      const provider = providerEl.value;
+      browserBox.classList.toggle('hidden', provider !== 'browser');
+      elevenBox.classList.toggle('hidden', provider !== 'elevenlabs');
+      updateStatus(provider === 'browser' ? '瀏覽器模式待命' : 'ElevenLabs 模式待命');
+      autoSaveSoon();
+    }
+
+    function loadVoices() {
+      voices = speechSynthesis.getVoices();
+      voiceEl.innerHTML = '';
+      if (!voices.length) {
+        const op = document.createElement('option');
+        op.value = ''; op.textContent = '載入語音中';
+        voiceEl.appendChild(op); return;
+      }
+      voices.forEach((voice, index) => {
+        const op = document.createElement('option');
+        op.value = index; op.textContent = `${voice.name} (${voice.lang})`;
+        voiceEl.appendChild(op);
+      });
+      const zhIndex = voices.findIndex(v => /zh|cmn/i.test(v.lang));
+      const enIndex = voices.findIndex(v => /^en/i.test(v.lang));
+      voiceEl.value = zhIndex >= 0 ? zhIndex : (enIndex >= 0 ? enIndex : 0);
+    }
+
+    function getCurrentElevenVoiceName() {
+      const idx = parseInt(elevenVoiceSelectEl.value, 10);
+      const voice = elevenVoices[idx];
+      return voice?.name || DEFAULT_VOICE_NAME;
+    }
+
+    function saveLocal(showAlert = false) {
+      localStorage.setItem('reader_provider', providerEl.value);
+      localStorage.setItem('reader_title', titleEl.value);
+      localStorage.setItem('reader_text', textEl.value);
+      localStorage.setItem('reader_lang', langEl.value);
+      localStorage.setItem('reader_rate', rateEl.value);
+      localStorage.setItem('reader_pitch', pitchEl.value);
+      localStorage.setItem('reader_volume', volumeEl.value);
+      localStorage.setItem('reader_eleven_api_key', elevenApiKeyEl.value);
+      localStorage.setItem('reader_eleven_voice_id', elevenVoiceIdEl.value);
+      localStorage.setItem('reader_eleven_voice_name', getCurrentElevenVoiceName());
+      localStorage.setItem('reader_eleven_model', elevenModelEl.value);
+      localStorage.setItem('reader_eleven_stability', stabilityEl.value);
+      localStorage.setItem('reader_eleven_similarity', similarityEl.value);
+      localStorage.setItem('reader_eleven_style', styleEl.value);
+      localStorage.setItem('reader_chunk_size', chunkSizeEl.value);
+      localStorage.setItem('reader_auto_continue', autoContinueEl.value);
+      setPersistNote('已自動保存最後一次內容與設定', 'ok');
+      if (showAlert) alert('已儲存到這台裝置的瀏覽器');
+    }
+
+    function loadLocal() {
+      providerEl.value = localStorage.getItem('reader_provider') || DEFAULT_PROVIDER;
+      titleEl.value = localStorage.getItem('reader_title') || '';
+      textEl.value = localStorage.getItem('reader_text') || '';
+      langEl.value = localStorage.getItem('reader_lang') || 'auto';
+      rateEl.value = localStorage.getItem('reader_rate') || '1';
+      pitchEl.value = localStorage.getItem('reader_pitch') || '1';
+      volumeEl.value = localStorage.getItem('reader_volume') || '1';
+      elevenApiKeyEl.value = localStorage.getItem('reader_eleven_api_key') || DEFAULT_API_KEY;
+      elevenVoiceIdEl.value = localStorage.getItem('reader_eleven_voice_id') || '';
+      elevenModelEl.value = localStorage.getItem('reader_eleven_model') || DEFAULT_MODEL;
+      stabilityEl.value = localStorage.getItem('reader_eleven_stability') || '0.45';
+      similarityEl.value = localStorage.getItem('reader_eleven_similarity') || '0.8';
+      styleEl.value = localStorage.getItem('reader_eleven_style') || '0.2';
+      chunkSizeEl.value = localStorage.getItem('reader_chunk_size') || '900';
+      autoContinueEl.value = localStorage.getItem('reader_auto_continue') || 'yes';
+      toggleProviderUI();
+      updateStatus(textEl.value.trim() ? '已載入上次內容' : '已載入');
+    }
+
+    function clearText() {
+      stopAllAudio();
+      textEl.value = ''; titleEl.value = '';
+      updateStatus('未播放');
+      autoSaveSoon();
+    }
+
+    function splitIntoChunks(text, maxLen) {
+      const clean = text.replace(/\r/g, '').trim();
+      const paras = clean.split(/\n+/).map(s => s.trim()).filter(Boolean);
+      const chunks = [];
+      let current = '';
+
+      function pushCurrent() {
+        if (current.trim()) chunks.push(current.trim());
+        current = '';
+      }
+
+      for (const para of paras) {
+        const sentences = para.match(/[^。！？!?；;:\n]+[。！？!?；;:]?|.+$/g) || [para];
+        for (const s of sentences) {
+          if ((current + s).length <= maxLen) {
+            current += s;
+          } else if (s.length > maxLen) {
+            pushCurrent();
+            for (let i = 0; i < s.length; i += maxLen) {
+              chunks.push(s.slice(i, i + maxLen));
+            }
+          } else {
+            pushCurrent();
+            current = s;
+          }
+        }
+        if (current.length > maxLen * 0.85) pushCurrent();
+      }
+      pushCurrent();
+      return chunks.length ? chunks : [clean];
+    }
+
+    function updateChunkProgress() {
+      const total = playbackState.chunks.length || 1;
+      const current = Math.min(playbackState.index + 1, total);
+      chunkProgressEl.max = total;
+      chunkProgressEl.value = playbackState.index;
+      chunkInfoEl.textContent = total > 0 ? `目前段落：${Math.min(playbackState.index + 1, total)} / ${total}` : '尚未開始分段播放';
+    }
+
+    async function fetchElevenVoices(preferBrian = false) {
+      const apiKey = elevenApiKeyEl.value.trim();
+      if (!apiKey) { alert('請先輸入 ElevenLabs API Key'); return; }
+      updateStatus('正在載入 ElevenLabs 音色清單...');
+      voiceMetaEl.textContent = '音色資料載入中...';
+
+      try {
+        const response = await fetch('https://api.elevenlabs.io/v1/voices', { method: 'GET', headers: { 'xi-api-key': apiKey } });
+        if (!response.ok) throw new Error(`API 錯誤 ${response.status}：${await response.text()}`);
+        const data = await response.json();
+        elevenVoices = Array.isArray(data.voices) ? data.voices : [];
+        elevenVoiceSelectEl.innerHTML = '';
+
+        if (!elevenVoices.length) {
+          elevenVoiceSelectEl.innerHTML = '<option value="">沒有可用音色</option>';
+          voiceMetaEl.textContent = '查無音色';
+          updateStatus('未找到音色');
+          return;
+        }
+
+        elevenVoices.forEach((voice, index) => {
+          const op = document.createElement('option');
+          op.value = index;
+          op.textContent = `${voice.name || 'Unnamed'} ｜ ${voice.category || 'unknown'}`;
+          elevenVoiceSelectEl.appendChild(op);
+        });
+
+        const savedVoiceName = (localStorage.getItem('reader_eleven_voice_name') || '').trim();
+        const savedVoiceId = (localStorage.getItem('reader_eleven_voice_id') || '').trim();
+        let targetIndex = -1;
+        if (savedVoiceId) targetIndex = elevenVoices.findIndex(v => (v.voice_id || '') === savedVoiceId);
+        if (targetIndex < 0 && savedVoiceName) targetIndex = elevenVoices.findIndex(v => (v.name || '').toLowerCase() === savedVoiceName.toLowerCase());
+        if (targetIndex < 0 && preferBrian) targetIndex = elevenVoices.findIndex(v => (v.name || '').toLowerCase().includes(DEFAULT_VOICE_NAME.toLowerCase()));
+        if (targetIndex < 0) targetIndex = 0;
+
+        elevenVoiceSelectEl.value = String(targetIndex);
+        syncVoiceIdFromSelect();
+        saveLocal(false);
+        updateStatus(`已載入 ${elevenVoices.length} 個音色`);
+      } catch (error) {
+        console.error(error);
+        voiceMetaEl.textContent = '載入失敗';
+        setPersistNote('音色載入失敗，請檢查 API 狀態或帳號方案', 'warn');
+        alert('載入音色失敗，請檢查 API、額度或瀏覽器限制。\n\n詳細錯誤：' + error.message);
+        updateStatus('音色載入失敗');
+      }
+    }
+
+    function syncVoiceIdFromSelect() {
+      const idx = parseInt(elevenVoiceSelectEl.value, 10);
+      const voice = elevenVoices[idx];
+      if (!voice) return;
+      elevenVoiceIdEl.value = voice.voice_id || '';
+      const labels = [];
+      if (voice.name) labels.push(`音色：${voice.name}`);
+      if (voice.category) labels.push(`類型：${voice.category}`);
+      if (voice.labels?.gender) labels.push(`性別：${voice.labels.gender}`);
+      if (voice.labels?.accent) labels.push(`口音：${voice.labels.accent}`);
+      if (voice.labels?.use_case) labels.push(`用途：${voice.labels.use_case}`);
+      voiceMetaEl.innerHTML = labels.length ? labels.map(v => `<span class="pill">${v}</span>`).join('') : '此音色沒有額外標籤資料';
+    }
+
+    function stopAllAudio() {
+      playbackState.stopped = true;
+      playbackState.paused = false;
+      speechSynthesis.cancel();
+      audioPlayer.pause();
+      audioPlayer.onended = null;
+      if (lastObjectUrl) {
+        URL.revokeObjectURL(lastObjectUrl);
+        lastObjectUrl = null;
+      }
+      audioPlayer.removeAttribute('src');
+      audioPlayer.classList.add('hidden');
+      audioHint.classList.add('hidden');
+      updateStatus('已停止');
+      updateChunkProgress();
+    }
+
+    function pauseCurrent() {
+      playbackState.paused = true;
+      if (providerEl.value === 'browser') {
+        speechSynthesis.pause();
+        updateStatus('已暫停');
+      } else {
+        audioPlayer.pause();
+        updateStatus('音檔已暫停');
+      }
+    }
+
+    function resumeCurrent() {
+      playbackState.paused = false;
+      if (providerEl.value === 'browser') {
+        speechSynthesis.resume();
+        updateStatus('朗讀中');
+      } else {
+        audioPlayer.play();
+        updateStatus('音檔播放中');
+      }
+    }
+
+    function detectLang(text) {
+      if (langEl.value !== 'auto') return langEl.value;
+      const zh = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+      const en = (text.match(/[A-Za-z]/g) || []).length;
+      return zh >= en ? 'zh-TW' : 'en-US';
+    }
+
+    function playBrowserTTS() {
+      const text = textEl.value.trim();
+      if (!text) { alert('請先貼入文章內容'); return; }
+      stopAllAudio();
+      playbackState.stopped = false;
+      playbackState.chunks = splitIntoChunks(text, parseInt(chunkSizeEl.value || '900', 10));
+      playbackState.index = 0;
+      updateChunkProgress();
+
+      const selected = voices[parseInt(voiceEl.value, 10)];
+      for (let i = 0; i < playbackState.chunks.length; i++) {
+        const utter = new SpeechSynthesisUtterance(playbackState.chunks[i]);
+        utter.lang = detectLang(text);
+        utter.rate = parseFloat(rateEl.value);
+        utter.pitch = parseFloat(pitchEl.value);
+        utter.volume = parseFloat(volumeEl.value);
+        if (selected) utter.voice = selected;
+        utter.onstart = () => {
+          playbackState.index = i;
+          updateChunkProgress();
+          updateStatus('朗讀中');
+        };
+        utter.onend = () => {
+          if (i === playbackState.chunks.length - 1) updateStatus('播放完成');
+        };
+        utter.onerror = () => updateStatus('播放失敗');
+        speechSynthesis.speak(utter);
+      }
+    }
+
+    async function generateElevenChunk(textChunk) {
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(elevenVoiceIdEl.value.trim())}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'xi-api-key': elevenApiKeyEl.value.trim(),
+          'Accept': 'audio/mpeg'
+        },
+        body: JSON.stringify({
+          text: textChunk,
+          model_id: elevenModelEl.value.trim() || DEFAULT_MODEL,
+          voice_settings: {
+            stability: parseFloat(stabilityEl.value || '0.45'),
+            similarity_boost: parseFloat(similarityEl.value || '0.8'),
+            style: parseFloat(styleEl.value || '0.2')
+          }
+        })
+      });
+      if (!response.ok) throw new Error(`API 錯誤 ${response.status}：${await response.text()}`);
+      return await response.blob();
+    }
+
+    async function playElevenChunk(index) {
+      if (playbackState.stopped) return;
+      if (index >= playbackState.chunks.length) {
+        updateStatus('播放完成');
+        chunkProgressEl.value = playbackState.chunks.length;
+        chunkInfoEl.textContent = `目前段落：${playbackState.chunks.length} / ${playbackState.chunks.length}`;
+        return;
+      }
+
+      playbackState.index = index;
+      updateChunkProgress();
+      updateStatus(`正在生成第 ${index + 1} 段語音...`);
+
+      try {
+        const blob = await generateElevenChunk(playbackState.chunks[index]);
+        if (playbackState.stopped) return;
+
+        if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
+        lastObjectUrl = URL.createObjectURL(blob);
+        audioPlayer.src = lastObjectUrl;
+        audioPlayer.classList.remove('hidden');
+        audioHint.classList.remove('hidden');
+
+        audioPlayer.onended = async () => {
+          if (playbackState.stopped) return;
+          if (autoContinueEl.value === 'yes') {
+            await playElevenChunk(index + 1);
+          } else {
+            updateStatus(`第 ${index + 1} 段播放完成`);
+          }
+        };
+
+        await audioPlayer.play();
+        updateStatus(`播放第 ${index + 1} 段中`);
+      } catch (error) {
+        console.error(error);
+        setPersistNote('播放失敗，請檢查帳號方案或 API 限制', 'warn');
+        alert('生成語音失敗，請檢查 API、音色權限、額度或瀏覽器限制。\n\n詳細錯誤：' + error.message);
+        updateStatus('生成失敗');
+      }
+    }
+
+    async function playElevenLabsChunked() {
+      const text = textEl.value.trim();
+      if (!text) { alert('請先貼入文章內容'); return; }
+      if (!elevenApiKeyEl.value.trim()) { alert('請先輸入 ElevenLabs API Key'); return; }
+      if (!elevenVoiceIdEl.value.trim()) { alert('請先載入音色，或確認 Brian 是否有成功選到'); return; }
+
+      stopAllAudio();
+      playbackState = {
+        chunks: splitIntoChunks(text, parseInt(chunkSizeEl.value || '900', 10)),
+        index: 0,
+        stopped: false,
+        paused: false
+      };
+      updateChunkProgress();
+      saveLocal(false);
+      await playElevenChunk(0);
+    }
+
+    function playCurrent() {
+      if (providerEl.value === 'browser') playBrowserTTS();
+      else playElevenLabsChunked();
+    }
+
+    [
+      textEl, titleEl, providerEl, langEl, elevenApiKeyEl, elevenVoiceIdEl, elevenModelEl,
+      stabilityEl, similarityEl, styleEl, rateEl, pitchEl, volumeEl, chunkSizeEl, autoContinueEl
+    ].forEach(el => el.addEventListener('input', () => { updateStatus('未播放'); autoSaveSoon(); }));
+
+    loadVoices();
+    if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices;
+    loadLocal();
+    setPersistNote('已啟用自動保存，會記住上次貼的內容', 'ok');
+    updateChunkProgress();
+
+    if (providerEl.value === 'elevenlabs' && elevenApiKeyEl.value) fetchElevenVoices(true);
+  </script>
+</body>
+</html>
